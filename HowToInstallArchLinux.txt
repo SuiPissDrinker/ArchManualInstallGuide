@@ -1,0 +1,282 @@
+#Note: This is for UEFI motherboards only (or boards that support it) at the moment. I'll add a bios section eventually too, probably.
+#This is a complete guide to installing ARCH Linux from 0 to Hyprland (Or whatever you choose, I guess.)
+
+#Some things to note:
+#0: I am going to assume you either know what the fuck I'm talking about, or are willing to look it up, and trust me, you will (Because I sure as fuck had to look up plenty of shit before making this guide) 
+#1: I am going to assume you know at least how to search how to use a specific tool I mention, and have some basic linux terminal experiance.
+#2: Anything commented out (prefixed with # is *most likely* me talking, but it could be refrecening a comment inside of a text file
+#3: Literally anytime I mention vim, you can use vi, nano, or any other text editor you'd like. I just use vim because I like it
+#4: I don't really recommend you blindly follow along, try to look into what I'm having you do. I literally spent days firguing out what I have written here, and if you don't know any of it, when you break your system in the future, or maybe I've written a typo, if you can't figure out how to fix it yourself, that's going to be a huge issue.
+#5: instruction/commands inside of instructions/commands look like this
+	vim /etc/butthole.cfg
+		uncomment the line "#is_farting=true"
+#6: index 
+
+
+
+
+
+0: setting up a bootable media
+	Search online for arch install iso
+	download it
+	download either ventoy or rufus. I prefer ventoy because it's epic 100% no cap, but pick whichever you'd rather use.
+	using one of those two, put it on a usb thumb drive
+	get into your motherboards bios and enable usb boot
+	boot into the arch iso on the usb
+
+
+
+
+1: Partion the disk{s}
+	using fdisk make 3 partitions
+		one with +512m for your efi
+		one with +{Desired swapspace} (if under 32gb of ram, use 1-2x your ram)
+		one with the rest of the drive space for your filesystem
+		
+		set the type of the first part to 1 (efi)
+		set the type of the second to swap (Linux swap)
+		set the type of the third to "Linux filesystem"
+	
+	mkfs.fat -F32 {efi parttion}
+	mkswap {swap partition}
+	mkfs.ext4 {linux filesystem partiton}
+
+
+
+2: Internet access for the bootable medium
+	#Note, you will not have the connection you restablied when you reboot on the main system.
+	 using iwctl connect to internet using your wifi adapter
+		device list (if you don't know you adapter name)
+		station {device name} scan
+		station {device name} get-networks (if you don't know your networks)
+		station {device name} connect "{network}" (include "")
+		#test if you are connected by pinging someone (google.com works)
+
+
+
+3: Update the mirror list
+	Update the  mirror if you have bad internet #(I do not have shitternet, eat my booty cheeks)
+	pacman -Syy
+	pacman -S  reflector
+	make a backup of the mirror list cause better safe than sorry
+		cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.bak
+	reflector -c "US" -f 12 -l 10 -n 12 --save /etc/pacman.d/mirrorlist (Replace "US" with your country. Ea: "FR", "CN", "TW", "JP", "AU", "UK", etc
+
+		
+
+4: rooting the root filesystem
+	Using mount, mount the partion you put the filesystem root on into /mnt
+		example: mount /dev/sda3 /mnt
+
+
+
+5: using pacstrap to bootstrap the system
+	#(Note that some of these are optional, but if you don't know which ones are, you probably aren't skilled enough yet to be able to safely do without them)
+	pacstrap /mnt base linux base-devel linux-headers linux-firmware vim networkmanager sudo git 
+	(that step will take time depending on your computer, so go make coffee or something)
+
+
+
+6: generate the fstab
+	genfstab -U /mnt >> /mnt/etc/fstab
+
+
+
+7: arch-chroot time! Prepare for boot
+	#this first command bassically allows us to "Fake" being the system we are installing so that we can install packages to it, even though it's not bootable yet.
+	arch-chroot /mnt
+	systemctl enable NetworkManager.service (NetworkManager case sensitive here)
+	#optionally set your locale. you can do this later but it is important
+	****The following is for US English****
+	vim /etc/locale.gen
+		uncomment en_US #This is needed for quite a bit of programs to work
+		uncomment en_GB
+	locale-gen
+	echo LANG=en_GB.UTF-8 > /etc/locale.conf
+	export LANG=en_GB.UTF-8
+	***************************************
+	#Set up the host name
+	echo {hostname} > /etc/hostname
+	vim /etc/hosts
+		add the follwing below the commented lines
+		127.0.0.1 localhost
+		::1 localhost
+		127.0.1.1 {hostname}
+
+	#change the visudo file
+	EDITOR=vim visudo
+		find the "#%wheel ALL=(ALL:ALL) ALL" line and uncomment it.
+
+
+
+	#Set up the root password, and set up other users.
+	#1: passwd root 
+		{rootpassword}
+		repeat {rootpassword}
+	
+	#2: adding other users
+	useradd -m {username}
+	passwd {username}
+		{userpassword}
+		repeat {userpassword}
+	#add as many users as you want.
+	#the following will make change {user} into a regular user
+	usermod -aG audio,video,storage {username}
+	#the following will change {user} into a sudoer
+	usermod -aG wheel,audio,video,storage {username}
+
+
+	#install grub to make the system bootable. This will make it so you can finally take the install media out.
+	pacman -S grub efibootmgr
+	mkdir /boot/efi
+	mount {efi partiton} /boot/efi
+	grub-install --target=x86_64-efi --bootloader-id=GRUB --efi-directory=/boot/efi
+	grub-mkconfig -o /boot/grub/grub.cfg
+	#The system is now bootable, but doesn't audio or complex visuals. I will cover how to set those up in just a second.
+
+	
+ 	reboot
+	use your username and password to login
+	proudly exclaim "I use Arch btw" as if some methhead on the internet didn't write a guide for simplifying the procsess several times
+	>>regret
+	realize this is literally just a single window bash shell.
+	emotional breakdown
+	continue
+	#We'll get to how to install a DE and WM soon, don't worry.
+
+
+
+8: Setting up wifi in the new system
+	#You should have downloaded and enabled networkmanager when following my pacstrap and setup earlier
+	test network
+		ping google.com
+		#if you get connection details, you've got an active connection
+		#if you don't
+			nmtui
+				go to activate a connection and sign into an access point you know if not already
+
+
+9: Set up the clock
+Setting up your system clock
+	timedatectl list-timezones
+		find the timezone for your area
+	timedatectl set-timezone {Zone/SubZone/SubSubZone}
+	hwclock --systohc 
+	#That last step overwrites your cmos time btw
+
+
+
+10: Setting up a DE and/or WM
+#I will cover XFCE, Hyperland with KDE, and GNOME 	
+	:XFCE:
+	pacman -S xfce4 lightdm light-dm-gtk-greeter
+	systemctl enable lightdm.service
+	reboot
+	#FYI, if your visuals ever break or fail, press CTRL-ALT-F2 to close thema and load up the shell
+	
+----------------------------------
+----------------------------------
+
+	:GNOME:
+	#I don't actually know if this works. I simply copied this one from a reddit post online. 
+	pacman -S xorg gnome
+	systemctl enable gdm.service
+
+----------------------------------
+----------------------------------
+
+	:Hyprland with KDE plasma:
+	#Technically, you can run KDE and hyprland seperate, and both of them are actually really nice to use by themselves, but I really suggest you use them both at the same time. It's great
+	:KDE:
+	git clone https://aur.archlinux.org/sddm-git.git
+	cd sddm-git
+	makepkg --install -f -s
+	cd .. && rm sddm-git #not needed, but it deletes clutter
+	#we do all of that because there is apparently a bug where certain systems will hang on shutdown when using the sddm in pacman (as of 2023)
+	pacman -S plasma-meta
+	systemctl enable sddm.service
+	reboot OR systemctl start sddm.service
+	:HYPRLAND:
+	pacman -S hyprland kitty gtk3 dolphin waybar ttf-font-awesome
+	#You can start it by either logging into KDE and having it choosen in the top right, or by typing "Hyprland" (case sensitive)  into a shell. Either work fine
+	(#Note, I really reccomend reading the wikipage for this, it's like really complicated at first, but it gets way better, and super fucking rad)
+	#You can rice the shit out of this thing, I really suggest you look into it! It's loads of fun!
+	#You can look at my rice if I posted it on my Github at : (nuh uh I forgor to link)
+	#for running native xorg applications, xwayland should already have been installed as a dependacny of hyprland. check with sudo pacman -Qi xorg-xwayland
+	
+----------------------------------
+----------------------------------
+
+11: Setting up audio
+	#I suggest setting up a DE and WM first. I've not tried this section without setting up a DE first, so idk.
+	#KFCE doesn't come with audio, but other DE's may come with it
+	#I've had good succsess with pulseaudio and alsa, so that's what I'll be using here
+	pacman -S alsa-utils pavucontrol pulseaudio-alsa pulseaudio-jack 
+	#You may wish to add pulseaudio-bluetooth and pulseaudio-equalizer but aren't needed 100%
+	#You max have to go into alsamixer and unmute some devices.
+
+
+
+12: Setting up automounting usbs/sds/inserts	
+	#Work in progress
+	#I'm pretty GNOME comes with this by default, but XFCE doesn't.
+	sudo pacman -S udisks2 udiskie
+	find your DE's display manager's Xsession file
+   	(GNOME) GDM - /etc/gdm/Xsession
+        (XFCE4) LightDM - /etc/lightdm/Xsession
+	(KDE)
+	
+	
+	
+B1: Setting up Nvidia drivers (I'm using the proprietary  drivers in this example, because they generally function much better for me, but pick your poison.)
+	enable multilib in pacman
+		#see B3 at the bottom of this doccument to figure out how to do that
+	pacman -S nvidia
+	# or pacman -S nvidia-open-dkms
+	# or pacman -S nvidia-dkms
+	#Note that will only work if your gpu is in the supported gpu for that package. look it up before following
+	#You may have to use the nouvue drivers, depending on your system
+	sudo /etc/default/grub
+		#note that this HAS to be done as root or with sudo or the file will not show (Unless you have severely fucked your permision tables lol
+		add "nvidia_drm.modeset=1 to the end of GRUB_CMDLINE_LINUX_DEFUALT=
+	grub-mkconfig -o /boot/grub/grub.cfg
+
+	vim /etc/mkinitcpio.conf add the following to your modules array
+	nvidia nvidia_modeset nvidia_uvm nvidia_drm	
+	run mkinitcpio --config /etc/mkinitcpio.conf --generate /boot/initramfs-custom.img
+	vim /etc/modprobe.d/nvidia.conf (make it if it doesn't exist)
+		add the line options nvidia-drm modeset=1
+
+
+	
+	#Hyprland specific changes
+	#After all of the above commands, add these into your hyprland config to get hyprland to play nice with your GPU "Maybe"
+	env = LIBVA_DRIVER_NAME,nvidia
+	env = XDG_SESSION_TYPE,wayland
+	env = GBM_BACKEND,nvidia-drm
+	env = __GLX_VENDOR_LIBRARY_NAME,nvidia
+	env = WLR_NO_HARDWARE_CURSORS,1	
+	#Arg I hate nvidia aaaarg (Yeah I still have dual nvidia gpus eat my nutsack
+
+
+
+B2: cosmetic changes
+	#for Japanese fonts
+	sudo pacman -S noto-fonts-cjk noto-fonts-emoji noto-fonts
+
+
+
+B4: Enabling multi-lib
+	vim /etc/pacman.conf
+		uncomment the following lines (both of them)
+		[multilib]
+		Include = /etc/pacman.d/mirrorlist
+
+
+B5: Installing Steam and getting it to work with proton
+	#One thing to note, is that steam isn't supported offically on arch, which is odd since the steam deck uses it, and it's arch based, but whatever
+	enable multilib in pacman
+		#See B3: at the bottom of this text file.
+	pacman -S steam
+		#It is going to ask you pick a provider for your vulkan and 32lib vulkan install. MOST OF THE TIME when installing something in pacman, the 1 option is best pick, HOWEVER for this step, you MUST pick the CORRECT one, or it will not work. it's pretty ovbious which one you need to pick from their name, but just pick the one for the brand of GPU you intend on using.
+			
